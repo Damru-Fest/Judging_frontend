@@ -12,7 +12,6 @@ export default function CompetitionGrid({ role }) {
   const loadCompetitions = async () => {
     try {
       const res = await axiosInstance.get(`/${role}/competitions`);
-      console.log(res);
       setCompetitions(res.data);
     } catch (err) {
       console.log("Error loading competitions:", err);
@@ -27,6 +26,17 @@ export default function CompetitionGrid({ role }) {
 
   const pushToCompe = (id) => {
     router.push(`/dashboard/view-competition/${id}`);
+  };
+
+  const selectCompe = async (id) => {
+    try {
+      const res = await axiosInstance.post(`/judge/competitions/${id}/select`);
+      router.push(`/dashboard/view-competition/${id}`);
+    } catch (err) {
+      console.log("Error loading competitions:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading) {
@@ -53,13 +63,22 @@ export default function CompetitionGrid({ role }) {
             <span>Type: {comp.type}</span>
             <span>{comp.participantCount} participants</span>
           </div>
-
-          <button
-            className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white"
-            onClick={() => pushToCompe(comp._id)}
-          >
-            View Details
-          </button>
+          {(role === "producer" || role === "director") && (
+            <button
+              className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white"
+              onClick={() => pushToCompe(comp._id)}
+            >
+              View Details
+            </button>
+          )}
+          {role === "judge" && (
+            <button
+              className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white"
+              onClick={() => selectCompe(comp._id)}
+            >
+              Select
+            </button>
+          )}
         </div>
       ))}
     </div>

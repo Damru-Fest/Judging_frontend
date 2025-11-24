@@ -16,6 +16,99 @@ export default function CompetitionDetailsPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [currentParticipant, setCurrentParticipant] = useState(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrix, setMatrix] = useState(null); // NEW
+  const [scoreInputs, setScoreInputs] = useState({});
+  const [submitScoreLoading, setSubmitScoreLoading] = useState(false);
+  const [scoreError, setScoreError] = useState("");
+
+  const openScoreModal = async (participant) => {
+    setShowScoreModal(true);
+    setMatrixLoading(true);
+    setScoreError("");
+    setMatrix(null);
+    setCurrentParticipant(participant);
+
+    try {
+      const res = await axiosInstance.get(
+        `/judge/competitions/${competitionId}/participants/${participant._id}/matrix`
+      );
+
+      setMatrix(res.data);
+
+      // Preload score inputs
+      const criteria = res.data.competition.criteria;
+      const existing = res.data.existingScore;
+
+      const initial = {};
+
+      if (existing && existing.scores) {
+        existing.scores.forEach((s) => {
+          initial[s.criterionName] = s.value;
+        });
+      } else {
+        criteria.forEach((c) => {
+          initial[c.name] = 0;
+        });
+      }
+
+      setScoreInputs(initial);
+    } catch (err) {
+      console.log(err);
+      setScoreError("Failed to load scoring data");
+    }
+
+    setMatrixLoading(false);
+  };
+
+  const updateScoreInput = (criterionName, value) => {
+    setScoreInputs((prev) => ({
+      ...prev,
+      [criterionName]: Number(value),
+    }));
+  };
+
+  const submitScore = async () => {
+    if (!currentParticipant) return;
+
+    setSubmitScoreLoading(true);
+    setScoreError("");
+
+    try {
+      const payload = {
+        participantId: currentParticipant._id,
+        scores: competition.criteria.map((c) => ({
+          criterionName: c.name,
+          value: scoreInputs[c.name] ?? 0,
+        })),
+      };
+      await axiosInstance.post(
+        `/judge/competitions/${competitionId}/scores`,
+        payload
+      );
+
+      setShowScoreModal(false);
+
+      // refresh list
+      const roleForRefresh =
+        user.role === "producer" || user.role === "director"
+          ? "director"
+          : "judge";
+
+      const pRes = await axiosInstance.get(
+        `/${roleForRefresh}/competitions/${competitionId}/participants`
+      );
+
+      setParticipants(pRes.data || []);
+    } catch (err) {
+      console.log(err);
+      setScoreError("Failed to submit score");
+    }
+
+    setSubmitScoreLoading(false);
+  };
 
   const handleCSVUpload = async (file) => {
     if (!file) return;
@@ -54,12 +147,18 @@ export default function CompetitionDetailsPage() {
   useEffect(() => {
     const loadDetails = async () => {
       try {
+        let role;
+        if (user.role === "producer" || user.role === "director") {
+          role = "director";
+        } else {
+          role = user.role;
+        }
         const res = await axiosInstance.get(
           `/${user.role}/competitions/${competitionId}`
         );
 
         const pRes = await axiosInstance.get(
-          `/director/competitions/${competitionId}/participants`
+          `/${role}/competitions/${competitionId}/participants`
         );
         setParticipants(pRes.data || []);
         setCompetition(res.data);
@@ -107,6 +206,70 @@ export default function CompetitionDetailsPage() {
 
   return (
     <div className="min-h-screen bg-[#0e0f12] text-white p-6">
+      {showScoreModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]">
+          <div className="bg-[#1a1b1e] border border-[#2a2a2d] p-6 rounded-xl w-96 shadow-xl">
+            {matrixLoading ? (
+              <p className="text-gray-300 text-center">Loading...</p>
+            ) : matrix ? (
+              <>
+                <h2 className="text-xl font-semibold mb-4">
+                  Score:{" "}
+                  {matrix.participant.teamName ||
+                    matrix.participant.members?.[0] ||
+                    "Participant"}
+                </h2>
+
+                {scoreError && (
+                  <p className="text-red-400 mb-2 text-sm">{scoreError}</p>
+                )}
+
+                {/* Criteria Inputs */}
+                <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
+                  {matrix.competition.criteria.map((c) => (
+                    <div key={c.name} className="flex flex-col">
+                      <label className="text-gray-300 mb-1">
+                        {c.name} (max {c.maxScore})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={c.maxScore}
+                        value={scoreInputs[c.name]}
+                        onChange={(e) =>
+                          setScoreInputs((prev) => ({
+                            ...prev,
+                            [c.name]: Number(e.target.value),
+                          }))
+                        }
+                        className="p-3 bg-[#111113] border border-[#2a2a2d] rounded-lg text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={submitScore}
+                  disabled={submitScoreLoading}
+                  className="mt-4 w-full py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-white"
+                >
+                  {submitScoreLoading ? "Submitting..." : "Submit Score"}
+                </button>
+
+                <button
+                  onClick={() => setShowScoreModal(false)}
+                  className="mt-2 w-full py-2 bg-[#2a2b2f] hover:bg-[#35363b] rounded-lg text-white"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <p className="text-red-400">Failed to load matrix</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {showUpload && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-[#1a1b1e] border border-[#2a2a2d] p-6 rounded-xl w-96 shadow-xl">
@@ -217,7 +380,7 @@ export default function CompetitionDetailsPage() {
             <div className="space-y-3">
               {competition.judges.map((j) => (
                 <div
-                  key={j.id}
+                  key={j._id}
                   className="p-4 bg-[#111113] border border-[#2a2a2d] rounded-lg"
                 >
                   <p>{j.name}</p>
@@ -272,15 +435,14 @@ export default function CompetitionDetailsPage() {
                           {p.teamName ? p.teamName : p.members[0]}
                         </p>
 
-                        <p className="text-gray-400 text-sm">
-                          Uploaded By: {p.uploadedBy?.name ?? "Unknown"}
-                        </p>
-
-                        {/* Members */}
-                        {p.members.length > 0 && (
-                          <p className="text-gray-300 text-sm mt-1">
-                            Members: {p.members.join(", ")}
-                          </p>
+                        {/* SCORE BUTTON — only for judges */}
+                        {user.role === "judge" && (
+                          <button
+                            onClick={() => openScoreModal(p)}
+                            className="mt-3 px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-sm"
+                          >
+                            Score Participant
+                          </button>
                         )}
                       </div>
                     ))}
