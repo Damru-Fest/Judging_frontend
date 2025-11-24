@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import axiosInstance from "../../../libs/axios";
 import EmptyState from "./EmptyState";
 import { useRouter } from "next/navigation";
-export default function CompetitionGrid() {
+export default function CompetitionGrid({ role }) {
   const [competitions, setCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const loadCompetitions = async () => {
     try {
-      const res = await axiosInstance.get("/producer/competitions");
+      const res = await axiosInstance.get(`/${role}/competitions`);
+      console.log(res);
       setCompetitions(res.data);
     } catch (err) {
       console.log("Error loading competitions:", err);
