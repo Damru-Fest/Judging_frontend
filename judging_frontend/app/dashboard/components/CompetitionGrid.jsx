@@ -46,7 +46,7 @@ export default function CompetitionGrid({ role }) {
   if (!loading && competitions?.length === 0) {
     return <EmptyState />;
   }
-
+  console.log(competitions);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 p-6">
       {competitions?.map((comp) => (

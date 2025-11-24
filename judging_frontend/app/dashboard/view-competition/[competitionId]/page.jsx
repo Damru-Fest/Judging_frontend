@@ -16,13 +16,11 @@ export default function CompetitionDetailsPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
-  const [showScoreModal, setShowScoreModal] = useState(false);
-  const [currentParticipant, setCurrentParticipant] = useState(null);
-  const [matrixLoading, setMatrixLoading] = useState(false);
-  const [matrix, setMatrix] = useState(null); // NEW
-  const [scoreInputs, setScoreInputs] = useState({});
-  const [submitScoreLoading, setSubmitScoreLoading] = useState(false);
-  const [scoreError, setScoreError] = useState("");
+  const [scoringMode, setScoringMode] = useState({}); // participantId: boolean
+  const [scoreInputs, setScoreInputs] = useState({}); // participantId: { criterionName: value }
+  const [submitScoreLoading, setSubmitScoreLoading] = useState({}); // participantId: boolean
+  const [scoreErrors, setScoreErrors] = useState({}); // participantId: string
+  const [existingScores, setExistingScores] = useState({}); // participantId: scores array
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardMeta, setLeaderboardMeta] = useState(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
@@ -31,64 +29,69 @@ export default function CompetitionDetailsPage() {
   const [sortBy, setSortBy] = useState("avgTotal");
   const [expandedParticipant, setExpandedParticipant] = useState(null);
 
-  const openScoreModal = async (participant) => {
-    setShowScoreModal(true);
-    setMatrixLoading(true);
-    setScoreError("");
-    setMatrix(null);
-    setCurrentParticipant(participant);
+  const initializeScoring = async (participant) => {
+    const participantId = participant._id;
+
+    setScoringMode((prev) => ({ ...prev, [participantId]: true }));
+    setScoreErrors((prev) => ({ ...prev, [participantId]: "" }));
 
     try {
       const res = await axiosInstance.get(
-        `/judge/competitions/${competitionId}/participants/${participant._id}/matrix`
+        `/judge/competitions/${competitionId}/participants/${participantId}/matrix`
       );
 
-      setMatrix(res.data);
-
-      // Preload score inputs
-      const criteria = res.data.competition.criteria;
       const existing = res.data.existingScore;
-
       const initial = {};
 
       if (existing && existing.scores) {
         existing.scores.forEach((s) => {
           initial[s.criterionName] = s.value;
         });
+        setExistingScores((prev) => ({
+          ...prev,
+          [participantId]: existing.scores,
+        }));
       } else {
-        criteria.forEach((c) => {
+        competition.criteria.forEach((c) => {
           initial[c.name] = 0;
         });
       }
 
-      setScoreInputs(initial);
+      setScoreInputs((prev) => ({ ...prev, [participantId]: initial }));
     } catch (err) {
       console.log(err);
-      setScoreError("Failed to load scoring data");
+      setScoreErrors((prev) => ({
+        ...prev,
+        [participantId]: "Failed to load scoring data",
+      }));
     }
-
-    setMatrixLoading(false);
   };
 
-  const updateScoreInput = (criterionName, value) => {
+  const updateScoreInput = (participantId, criterionName, value) => {
     setScoreInputs((prev) => ({
       ...prev,
-      [criterionName]: Number(value),
+      [participantId]: {
+        ...prev[participantId],
+        [criterionName]: Number(value),
+      },
     }));
   };
 
-  const submitScore = async () => {
-    if (!currentParticipant) return;
+  const cancelScoring = (participantId) => {
+    setScoringMode((prev) => ({ ...prev, [participantId]: false }));
+    setScoreErrors((prev) => ({ ...prev, [participantId]: "" }));
+  };
 
-    setSubmitScoreLoading(true);
-    setScoreError("");
+  const submitScore = async (participantId) => {
+    setSubmitScoreLoading((prev) => ({ ...prev, [participantId]: true }));
+    setScoreErrors((prev) => ({ ...prev, [participantId]: "" }));
 
     try {
       const payload = {
-        participantId: currentParticipant._id,
+        participantId: participantId,
         scores: competition.criteria.map((c) => ({
           criterionName: c.name,
-          value: scoreInputs[c.name] ?? 0,
+          value: scoreInputs[participantId]?.[c.name] ?? 0,
         })),
       };
       await axiosInstance.post(
@@ -96,7 +99,7 @@ export default function CompetitionDetailsPage() {
         payload
       );
 
-      setShowScoreModal(false);
+      setScoringMode((prev) => ({ ...prev, [participantId]: false }));
 
       // refresh list
       const roleForRefresh =
@@ -114,10 +117,13 @@ export default function CompetitionDetailsPage() {
       await loadLeaderboard();
     } catch (err) {
       console.log(err);
-      setScoreError("Failed to submit score");
+      setScoreErrors((prev) => ({
+        ...prev,
+        [participantId]: "Failed to submit score",
+      }));
     }
 
-    setSubmitScoreLoading(false);
+    setSubmitScoreLoading((prev) => ({ ...prev, [participantId]: false }));
   };
 
   const handleCSVUpload = async (file) => {
@@ -240,70 +246,6 @@ export default function CompetitionDetailsPage() {
 
   return (
     <div className="min-h-screen bg-[#0e0f12] text-white p-6">
-      {showScoreModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-9999">
-          <div className="bg-[#1a1b1e] border border-[#2a2a2d] p-6 rounded-xl w-96 shadow-xl">
-            {matrixLoading ? (
-              <p className="text-gray-300 text-center">Loading...</p>
-            ) : matrix ? (
-              <>
-                <h2 className="text-xl font-semibold mb-4">
-                  Score:{" "}
-                  {matrix.participant.teamName ||
-                    matrix.participant.members?.[0] ||
-                    "Participant"}
-                </h2>
-
-                {scoreError && (
-                  <p className="text-red-400 mb-2 text-sm">{scoreError}</p>
-                )}
-
-                {/* Criteria Inputs */}
-                <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
-                  {matrix.competition.criteria.map((c) => (
-                    <div key={c.name} className="flex flex-col">
-                      <label className="text-gray-300 mb-1">
-                        {c.name} (max {c.maxScore})
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={c.maxScore}
-                        value={scoreInputs[c.name]}
-                        onChange={(e) =>
-                          setScoreInputs((prev) => ({
-                            ...prev,
-                            [c.name]: Number(e.target.value),
-                          }))
-                        }
-                        className="p-3 bg-[#111113] border border-[#2a2a2d] rounded-lg text-white"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={submitScore}
-                  disabled={submitScoreLoading}
-                  className="mt-4 w-full py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-white"
-                >
-                  {submitScoreLoading ? "Submitting..." : "Submit Score"}
-                </button>
-
-                <button
-                  onClick={() => setShowScoreModal(false)}
-                  className="mt-2 w-full py-2 bg-[#2a2b2f] hover:bg-[#35363b] rounded-lg text-white"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <p className="text-red-400">Failed to load matrix</p>
-            )}
-          </div>
-        </div>
-      )}
-
       {showUpload && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-[#1a1b1e] border border-[#2a2a2d] p-6 rounded-xl w-96 shadow-xl">
@@ -482,7 +424,6 @@ export default function CompetitionDetailsPage() {
             </div>
           ) : leaderboard.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-6xl mb-4">🎯</div>
               <p className="text-gray-500 text-lg">No scores submitted yet</p>
               <p className="text-gray-600 text-sm mt-2">
                 Scores will appear here once judges start evaluating
@@ -755,7 +696,7 @@ export default function CompetitionDetailsPage() {
                                                   }}
                                                 />
                                               </div>
-                                              <span className="text-white text-sm font-medium min-w-[2rem] text-right">
+                                              <span className="text-white text-sm font-medium min-w-8 text-right">
                                                 {crit.value}
                                               </span>
                                             </div>
@@ -825,63 +766,261 @@ export default function CompetitionDetailsPage() {
 
         {/* Participants */}
         <div className="mt-10">
-          <h2 className="text-2xl font-semibold mb-3">Participants</h2>
-          {(user.role === "producer" || user.role === "director") && (
-            <button
-              onClick={() => setShowUpload(true)}
-              className="mb-4 px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg"
-            >
-              Upload CSV
-            </button>
-          )}
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-semibold">Participants & Scoring</h2>
+            {(user.role === "producer" || user.role === "director") && (
+              <button
+                onClick={() => setShowUpload(true)}
+                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg"
+              >
+                Upload CSV
+              </button>
+            )}
+          </div>
 
           {participants.length === 0 ? (
-            <p className="text-gray-500">No participants yet.</p>
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">👥</div>
+              <p className="text-gray-500 text-lg">No participants yet</p>
+              <p className="text-gray-600 text-sm mt-2">
+                Upload a CSV file to add participants
+              </p>
+            </div>
           ) : (
-            <div className="space-y-6">
-              {/* TEAM GROUPING */}
-              {Object.entries(
-                participants.reduce((acc, p) => {
-                  const team = p.teamName || `Participant-${p.members[0]}`;
-                  if (!acc[team]) acc[team] = [];
-                  acc[team].push(p);
-                  return acc;
-                }, {})
-              ).map(([teamName, teamMembers], idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#111113] border border-[#2a2a2d] p-5 rounded-lg"
-                >
-                  <h3 className="text-xl font-medium mb-3">
-                    {teamName === `Participant-${teamMembers[0].members[0]}`
-                      ? `Solo Participant`
-                      : teamName}
-                  </h3>
+            <div className="space-y-4">
+              {participants.map((participant) => {
+                const isScoring = scoringMode[participant._id];
+                const participantScores = scoreInputs[participant._id] || {};
+                const isSubmitting = submitScoreLoading[participant._id];
+                const hasError = scoreErrors[participant._id];
 
-                  <div className="space-y-2">
-                    {teamMembers.map((p) => (
-                      <div
-                        key={p._id}
-                        className="bg-[#1a1b1e] border border-[#2a2b2f] p-3 rounded-lg"
-                      >
-                        <p className="text-lg text-white">
-                          {p.teamName ? p.teamName : p.members[0]}
-                        </p>
+                return (
+                  <div
+                    key={participant._id}
+                    className="bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden"
+                  >
+                    {/* Participant Header */}
+                    <div className="p-5 border-b border-[#2a2a2d]">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            {participant.teamName ? (
+                              <div>
+                                <h3 className="text-xl font-semibold text-white">
+                                  🏆 {participant.teamName}
+                                </h3>
+                                <p className="text-gray-400 text-sm mt-1">
+                                  Team Members: {participant.members.join(", ")}
+                                </p>
+                              </div>
+                            ) : (
+                              <h3 className="text-xl font-semibold text-white">
+                                {participant.members[0]}
+                              </h3>
+                            )}
+                          </div>
+                          {participant.email && (
+                            <p className="text-gray-500 text-sm">
+                              📧 {participant.email}
+                            </p>
+                          )}
+                        </div>
 
-                        {/* SCORE BUTTON — only for judges */}
                         {user.role === "judge" && (
-                          <button
-                            onClick={() => openScoreModal(p)}
-                            className="mt-3 px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-sm"
-                          >
-                            Score Participant
-                          </button>
+                          <div className="flex gap-2">
+                            {!isScoring ? (
+                              <button
+                                onClick={() => initializeScoring(participant)}
+                                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-sm transition-colors"
+                              >
+                                Score Participant
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => submitScore(participant._id)}
+                                  disabled={isSubmitting}
+                                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
+                                >
+                                  {isSubmitting ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                      Saving...
+                                    </>
+                                  ) : (
+                                    <>Save Score</>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => cancelScoring(participant._id)}
+                                  disabled={isSubmitting}
+                                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-sm transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    ))}
+
+                      {hasError && (
+                        <div className="mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                          <p className="text-red-400 text-sm"> {hasError}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Scoring Interface */}
+                    {isScoring && (
+                      <div className="p-5 bg-[#0a0b0e]">
+                        <h4 className="text-lg font-medium mb-4 text-white">
+                          Score Criteria
+                        </h4>
+
+                        {/* Excel-like scoring grid */}
+                        <div className="overflow-x-auto">
+                          <div className="min-w-full">
+                            {/* Header */}
+                            <div
+                              className="grid gap-3 mb-3"
+                              style={{
+                                gridTemplateColumns: `2fr repeat(${competition.criteria.length}, 1fr) 1fr`,
+                              }}
+                            >
+                              <div className="font-medium text-gray-300 text-sm">
+                                Criterion
+                              </div>
+                              {competition.criteria.map((criterion) => (
+                                <div
+                                  key={criterion.name}
+                                  className="text-center font-medium text-gray-300 text-sm"
+                                >
+                                  {criterion.name}
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    (max {criterion.maxScore})
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="text-center font-medium text-gray-300 text-sm">
+                                Total
+                              </div>
+                            </div>
+
+                            {/* Input Row */}
+                            <div
+                              className="grid gap-3 items-center"
+                              style={{
+                                gridTemplateColumns: `2fr repeat(${competition.criteria.length}, 1fr) 1fr`,
+                              }}
+                            >
+                              <div className="text-white font-medium">
+                                Enter Scores
+                              </div>
+                              {competition.criteria.map((criterion) => (
+                                <div key={criterion.name} className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={criterion.maxScore}
+                                    value={
+                                      participantScores[criterion.name] || 0
+                                    }
+                                    onChange={(e) =>
+                                      updateScoreInput(
+                                        participant._id,
+                                        criterion.name,
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full p-2 bg-[#1a1b1e] border border-[#2a2a2d] rounded text-white text-center focus:border-[#4f46e5] focus:ring-1 focus:ring-[#4f46e5] transition-colors"
+                                    placeholder="0"
+                                  />
+                                  {/* Score bar indicator */}
+                                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700 rounded-b">
+                                    <div
+                                      className="h-full bg-[#4f46e5] rounded-b transition-all duration-300"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((participantScores[criterion.name] ||
+                                            0) /
+                                            criterion.maxScore) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="text-center">
+                                <div className="bg-[#1a1b1e] border border-[#4f46e5] rounded p-2 text-white font-bold">
+                                  {competition.criteria.reduce(
+                                    (total, c) =>
+                                      total + (participantScores[c.name] || 0),
+                                    0
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  of{" "}
+                                  {competition.criteria.reduce(
+                                    (sum, c) => sum + c.maxScore,
+                                    0
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Progress bar for overall score */}
+                            <div className="mt-4">
+                              <div className="flex justify-between text-sm text-gray-400 mb-2">
+                                <span>Overall Progress</span>
+                                <span>
+                                  {Math.round(
+                                    (competition.criteria.reduce(
+                                      (total, c) =>
+                                        total +
+                                        (participantScores[c.name] || 0),
+                                      0
+                                    ) /
+                                      competition.criteria.reduce(
+                                        (sum, c) => sum + c.maxScore,
+                                        0
+                                      )) *
+                                      100
+                                  )}
+                                  %
+                                </span>
+                              </div>
+                              <div className="w-full bg-gray-700 rounded-full h-3">
+                                <div
+                                  className="bg-linear-to-r from-[#4f46e5] to-purple-500 h-3 rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      (competition.criteria.reduce(
+                                        (total, c) =>
+                                          total +
+                                          (participantScores[c.name] || 0),
+                                        0
+                                      ) /
+                                        competition.criteria.reduce(
+                                          (sum, c) => sum + c.maxScore,
+                                          0
+                                        )) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
