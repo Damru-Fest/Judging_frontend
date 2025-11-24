@@ -507,7 +507,6 @@ export default function CompetitionDetailsPage() {
                         }
                       >
                         <div className="bg-linear-to-t from-gray-600 to-gray-400 text-white p-4 rounded-t-lg h-32 flex flex-col justify-end min-w-[120px]">
-                          <div className="text-2xl mb-2">🥈</div>
                           <div className="text-sm font-semibold truncate">
                             {leaderboard[1].participant?.teamName ||
                               leaderboard[1].participant?.members?.[0] ||
@@ -568,7 +567,6 @@ export default function CompetitionDetailsPage() {
                         }
                       >
                         <div className="bg-linear-to-t from-amber-700 to-amber-500 text-white p-4 rounded-t-lg h-28 flex flex-col justify-end min-w-[120px]">
-                          <div className="text-2xl mb-2">🥉</div>
                           <div className="text-sm font-semibold truncate">
                             {leaderboard[2].participant?.teamName ||
                               leaderboard[2].participant?.members?.[0] ||
