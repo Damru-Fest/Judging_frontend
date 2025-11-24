@@ -23,6 +23,13 @@ export default function CompetitionDetailsPage() {
   const [scoreInputs, setScoreInputs] = useState({});
   const [submitScoreLoading, setSubmitScoreLoading] = useState(false);
   const [scoreError, setScoreError] = useState("");
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderboardMeta, setLeaderboardMeta] = useState(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
+  const [leaderboardView, setLeaderboardView] = useState("podium"); // 'podium' or 'table'
+  const [sortBy, setSortBy] = useState("avgTotal");
+  const [expandedParticipant, setExpandedParticipant] = useState(null);
 
   const openScoreModal = async (participant) => {
     setShowScoreModal(true);
@@ -102,6 +109,9 @@ export default function CompetitionDetailsPage() {
       );
 
       setParticipants(pRes.data || []);
+
+      // Refresh leaderboard as well
+      await loadLeaderboard();
     } catch (err) {
       console.log(err);
       setScoreError("Failed to submit score");
@@ -144,6 +154,23 @@ export default function CompetitionDetailsPage() {
     setUploading(false);
   };
 
+  const loadLeaderboard = async () => {
+    try {
+      setLeaderboardLoading(true);
+      const lbRes = await axiosInstance.get(
+        `/leaderboard/${competitionId}?limit=${
+          showFullLeaderboard ? 50 : 10
+        }&sortBy=${sortBy}`
+      );
+      setLeaderboard(lbRes.data.leaderboard || []);
+      setLeaderboardMeta(lbRes.data.metadata || null);
+    } catch (err) {
+      console.error("Failed to load leaderboard:", err);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  };
+
   useEffect(() => {
     const loadDetails = async () => {
       try {
@@ -162,6 +189,7 @@ export default function CompetitionDetailsPage() {
         );
         setParticipants(pRes.data || []);
         setCompetition(res.data);
+        await loadLeaderboard();
       } catch (err) {
         console.error("Failed to load competition:", err);
       } finally {
@@ -171,6 +199,12 @@ export default function CompetitionDetailsPage() {
 
     loadDetails();
   }, [competitionId]);
+
+  useEffect(() => {
+    if (competition) {
+      loadLeaderboard();
+    }
+  }, [sortBy, showFullLeaderboard]);
 
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this competition?")) return;
@@ -207,7 +241,7 @@ export default function CompetitionDetailsPage() {
   return (
     <div className="min-h-screen bg-[#0e0f12] text-white p-6">
       {showScoreModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-9999">
           <div className="bg-[#1a1b1e] border border-[#2a2a2d] p-6 rounded-xl w-96 shadow-xl">
             {matrixLoading ? (
               <p className="text-gray-300 text-center">Loading...</p>
@@ -390,6 +424,407 @@ export default function CompetitionDetailsPage() {
             </div>
           )}
         </div>
+        {/* Leaderboard */}
+        <div className="mt-10">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <h2 className="text-3xl font-bold bg-linear-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+              Competition Leaderboard
+            </h2>
+
+            <div className="flex flex-wrap gap-3">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-3 py-2 bg-[#1a1b1e] border border-[#2a2a2d] rounded-lg text-white text-sm"
+              >
+                <option value="avgTotal">Average Score</option>
+                <option value="totalSum">Total Sum</option>
+                <option value="maxScore">Highest Score</option>
+                <option value="latest">Most Recent</option>
+              </select>
+
+              <div className="flex bg-[#1a1b1e] border border-[#2a2a2d] rounded-lg p-1">
+                <button
+                  onClick={() => setLeaderboardView("podium")}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    leaderboardView === "podium"
+                      ? "bg-[#4f46e5] text-white"
+                      : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Podium
+                </button>
+                <button
+                  onClick={() => setLeaderboardView("table")}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    leaderboardView === "table"
+                      ? "bg-[#4f46e5] text-white"
+                      : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Table
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowFullLeaderboard(!showFullLeaderboard)}
+                className="px-4 py-2 bg-[#2a2b2f] hover:bg-[#35363b] border border-[#3a3a3d] rounded-lg text-white text-sm transition-colors"
+              >
+                {showFullLeaderboard ? "Show Top 10" : "Show All"}
+              </button>
+            </div>
+          </div>
+
+          {leaderboardLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4f46e5]"></div>
+              <span className="ml-3 text-gray-400">Loading leaderboard...</span>
+            </div>
+          ) : leaderboard.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🎯</div>
+              <p className="text-gray-500 text-lg">No scores submitted yet</p>
+              <p className="text-gray-600 text-sm mt-2">
+                Scores will appear here once judges start evaluating
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Podium View */}
+              {leaderboardView === "podium" && leaderboard.length >= 3 && (
+                <div className="mb-8">
+                  <div className="flex justify-center items-end gap-4 mb-8">
+                    {/* 2nd Place */}
+                    {leaderboard[1] && (
+                      <div
+                        className="text-center transform hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() =>
+                          setExpandedParticipant(
+                            expandedParticipant === leaderboard[1]._id
+                              ? null
+                              : leaderboard[1]._id
+                          )
+                        }
+                      >
+                        <div className="bg-linear-to-t from-gray-600 to-gray-400 text-white p-4 rounded-t-lg h-32 flex flex-col justify-end min-w-[120px]">
+                          <div className="text-2xl mb-2">🥈</div>
+                          <div className="text-sm font-semibold truncate">
+                            {leaderboard[1].participant?.teamName ||
+                              leaderboard[1].participant?.members?.[0] ||
+                              "Team"}
+                          </div>
+                          <div className="text-xs opacity-90">
+                            {leaderboard[1].scores?.average ||
+                              leaderboard[1].avgTotal}{" "}
+                            pts
+                          </div>
+                        </div>
+                        <div className="bg-linear-to-b from-gray-600 to-gray-800 text-white py-2 px-3 rounded-b-lg">
+                          <div className="text-lg font-bold">#2</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 1st Place */}
+                    {leaderboard[0] && (
+                      <div
+                        className="text-center transform hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() =>
+                          setExpandedParticipant(
+                            expandedParticipant === leaderboard[0]._id
+                              ? null
+                              : leaderboard[0]._id
+                          )
+                        }
+                      >
+                        <div className="bg-linear-to-t from-yellow-600 to-yellow-400 text-white p-4 rounded-t-lg h-40 flex flex-col justify-end min-w-[140px] shadow-lg shadow-yellow-500/20">
+                          <div className="text-sm font-bold truncate">
+                            {leaderboard[0].participant?.teamName ||
+                              leaderboard[0].participant?.members?.[0] ||
+                              "Team"}
+                          </div>
+                          <div className="text-xs opacity-90">
+                            {leaderboard[0].scores?.average ||
+                              leaderboard[0].avgTotal}{" "}
+                            pts
+                          </div>
+                        </div>
+                        <div className="bg-linear-to-b from-yellow-600 to-yellow-800 text-white py-3 px-4 rounded-b-lg">
+                          <div className="text-xl font-bold">#1</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3rd Place */}
+                    {leaderboard[2] && (
+                      <div
+                        className="text-center transform hover:scale-105 transition-transform cursor-pointer"
+                        onClick={() =>
+                          setExpandedParticipant(
+                            expandedParticipant === leaderboard[2]._id
+                              ? null
+                              : leaderboard[2]._id
+                          )
+                        }
+                      >
+                        <div className="bg-linear-to-t from-amber-700 to-amber-500 text-white p-4 rounded-t-lg h-28 flex flex-col justify-end min-w-[120px]">
+                          <div className="text-2xl mb-2">🥉</div>
+                          <div className="text-sm font-semibold truncate">
+                            {leaderboard[2].participant?.teamName ||
+                              leaderboard[2].participant?.members?.[0] ||
+                              "Team"}
+                          </div>
+                          <div className="text-xs opacity-90">
+                            {leaderboard[2].scores?.average ||
+                              leaderboard[2].avgTotal}{" "}
+                            pts
+                          </div>
+                        </div>
+                        <div className="bg-linear-to-b from-amber-700 to-amber-900 text-white py-2 px-3 rounded-b-lg">
+                          <div className="text-lg font-bold">#3</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Table View / Remaining Positions */}
+              <div className="space-y-3">
+                {(leaderboardView === "table"
+                  ? leaderboard
+                  : leaderboard.slice(3)
+                ).map((item, index) => {
+                  const actualRank =
+                    leaderboardView === "table" ? item.rank : item.rank;
+                  const isExpanded = expandedParticipant === item._id;
+                  const participantName =
+                    item.participant?.teamName ||
+                    item.participant?.members?.[0] ||
+                    "Participant";
+
+                  const getRankColor = (rank) => {
+                    if (rank === 1)
+                      return "from-yellow-500/20 to-yellow-600/10 border-yellow-500/30";
+                    if (rank === 2)
+                      return "from-gray-400/20 to-gray-500/10 border-gray-400/30";
+                    if (rank === 3)
+                      return "from-amber-500/20 to-amber-600/10 border-amber-500/30";
+                    if (rank <= 10)
+                      return "from-blue-500/10 to-purple-500/10 border-blue-500/20";
+                    return "from-gray-600/10 to-gray-700/10 border-gray-600/20";
+                  };
+
+                  return (
+                    <div
+                      key={item._id}
+                      className={`bg-linear-to-r ${getRankColor(
+                        actualRank
+                      )} border backdrop-blur-sm rounded-xl p-5 transition-all duration-300 hover:shadow-lg cursor-pointer ${
+                        isExpanded
+                          ? "shadow-lg shadow-[#4f46e5]/10"
+                          : "hover:shadow-md"
+                      }`}
+                      onClick={() =>
+                        setExpandedParticipant(isExpanded ? null : item._id)
+                      }
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl font-bold text-white">
+                                #{actualRank}
+                              </span>
+                              <span className="text-lg font-semibold text-white">
+                                {participantName}
+                              </span>
+                              {item.scores?.judgeCount > 1 && (
+                                <span className="px-2 py-1 bg-[#4f46e5]/20 text-[#4f46e5] text-xs rounded-full">
+                                  {item.scores.judgeCount} judges
+                                </span>
+                              )}
+                            </div>
+                            {item.participant?.members &&
+                              item.participant.members.length > 1 && (
+                                <p className="text-gray-400 text-sm mt-1">
+                                  Team:{" "}
+                                  {item.participant.members
+                                    .slice(0, 3)
+                                    .join(", ")}
+                                  {item.participant.members.length > 3 &&
+                                    ` +${
+                                      item.participant.members.length - 3
+                                    } more`}
+                                </p>
+                              )}
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-white">
+                            {item.scores?.average || item.avgTotal}
+                          </div>
+                          <div className="text-gray-400 text-sm">
+                            {item.percentile}th percentile
+                          </div>
+                          {item.scores?.maximum !== item.scores?.average && (
+                            <div className="text-gray-500 text-xs">
+                              Best: {item.scores?.maximum}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs text-gray-400 mb-1">
+                          <span>Score Progress</span>
+                          <span>
+                            {Math.round(
+                              ((item.scores?.average || item.avgTotal) /
+                                competition.criteria.reduce(
+                                  (sum, c) => sum + c.maxScore,
+                                  0
+                                )) *
+                                100
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-2">
+                          <div
+                            className="bg-linear-to-r from-[#4f46e5] to-purple-500 h-2 rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                ((item.scores?.average || item.avgTotal) /
+                                  competition.criteria.reduce(
+                                    (sum, c) => sum + c.maxScore,
+                                    0
+                                  )) *
+                                  100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="mt-4 pt-4 border-t border-gray-600/30">
+                          {/* Judge Scores */}
+                          {item.allJudgeScores &&
+                            item.allJudgeScores.length > 0 && (
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {item.allJudgeScores.map((judge, jIdx) => (
+                                  <div
+                                    key={jIdx}
+                                    className="bg-[#0a0a0c]/50 border border-[#2a2a2d] p-4 rounded-lg"
+                                  >
+                                    <div className="flex justify-between items-center mb-3">
+                                      <h4 className="text-white font-medium">
+                                        {judge.judgeName || `Judge ${jIdx + 1}`}
+                                      </h4>
+                                      <span className="text-[#4f46e5] font-bold">
+                                        {judge.score} pts
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      {judge.criteriaScores?.map(
+                                        (crit, cIdx) => (
+                                          <div
+                                            key={cIdx}
+                                            className="flex justify-between items-center"
+                                          >
+                                            <span className="text-gray-300 text-sm">
+                                              {crit.criterionName}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-16 bg-gray-700 rounded-full h-1.5">
+                                                <div
+                                                  className="bg-[#4f46e5] h-1.5 rounded-full"
+                                                  style={{
+                                                    width: `${
+                                                      (crit.value /
+                                                        competition.criteria.find(
+                                                          (c) =>
+                                                            c.name ===
+                                                            crit.criterionName
+                                                        )?.maxScore || 1) * 100
+                                                    }%`,
+                                                  }}
+                                                />
+                                              </div>
+                                              <span className="text-white text-sm font-medium min-w-[2rem] text-right">
+                                                {crit.value}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+
+                                    <p className="text-gray-500 text-xs mt-3">
+                                      {new Date(
+                                        judge.submittedAt
+                                      ).toLocaleDateString()}{" "}
+                                      at{" "}
+                                      {new Date(
+                                        judge.submittedAt
+                                      ).toLocaleTimeString()}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Enhanced Statistics */}
+              {leaderboardMeta && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+                  <div className="bg-linear-to-br from-green-500/10 to-green-600/5 border border-green-500/20 p-6 rounded-xl">
+                    <div className="text-2xl font-bold text-white">
+                      {leaderboardMeta.statistics?.highestScore || "N/A"}
+                    </div>
+                    <div className="text-gray-400 text-sm">Highest Score</div>
+                  </div>
+
+                  <div className="bg-linear-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 p-6 rounded-xl">
+                    <div className="text-2xl font-bold text-white">
+                      {leaderboardMeta.statistics?.averageScore?.toFixed(1) ||
+                        "N/A"}
+                    </div>
+                    <div className="text-gray-400 text-sm">Average Score</div>
+                  </div>
+
+                  <div className="bg-linear-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 p-6 rounded-xl">
+                    <div className="text-2xl font-bold text-white">
+                      {leaderboardMeta.totalParticipants || 0}
+                    </div>
+                    <div className="text-gray-400 text-sm">
+                      Total Participants
+                    </div>
+                  </div>
+
+                  <div className="bg-linear-to-br from-orange-500/10 to-orange-600/5 border border-orange-500/20 p-6 rounded-xl">
+                    <div className="text-2xl font-bold text-white">
+                      {leaderboardMeta.statistics?.completionRate || 0}%
+                    </div>
+                    <div className="text-gray-400 text-sm">Completion Rate</div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
         {/* Participants */}
         <div className="mt-10">
           <h2 className="text-2xl font-semibold mb-3">Participants</h2>
