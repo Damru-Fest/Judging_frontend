@@ -30,26 +30,26 @@ export default function CompetitionDetailsPage() {
   const [expandedParticipant, setExpandedParticipant] = useState(null);
 
   const initializeScoring = async (participant) => {
-    const participantId = participant._id;
+    const participantId = participant.id;
 
     setScoringMode((prev) => ({ ...prev, [participantId]: true }));
     setScoreErrors((prev) => ({ ...prev, [participantId]: "" }));
 
     try {
       const res = await axiosInstance.get(
-        `/judge/competitions/${competitionId}/participants/${participantId}/matrix`
+        `/competitions/${competitionId}/participant/${participantId}/matrix`
       );
 
-      const existing = res.data.existingScore;
+      const existing = res.data.existingScores;
       const initial = {};
 
-      if (existing && existing.scores) {
-        existing.scores.forEach((s) => {
-          initial[s.criterionName] = s.value;
+      if (existing && existing.length > 0) {
+        existing.forEach((s) => {
+          initial[s.criteria.name] = s.score;
         });
         setExistingScores((prev) => ({
           ...prev,
-          [participantId]: existing.scores,
+          [participantId]: existing,
         }));
       } else {
         competition.criteria.forEach((c) => {
@@ -88,27 +88,20 @@ export default function CompetitionDetailsPage() {
 
     try {
       const payload = {
+        competitionId: competitionId,
         participantId: participantId,
-        scores: competition.criteria.map((c) => ({
-          criterionName: c.name,
+        scores: competition.criteria?.map((c) => ({
+          criteriaId: c.id,
           value: scoreInputs[participantId]?.[c.name] ?? 0,
         })),
       };
-      await axiosInstance.post(
-        `/judge/competitions/${competitionId}/scores`,
-        payload
-      );
+      await axiosInstance.post(`/competitions/score`, payload);
 
       setScoringMode((prev) => ({ ...prev, [participantId]: false }));
 
       // refresh list
-      const roleForRefresh =
-        user.role === "producer" || user.role === "director"
-          ? "director"
-          : "judge";
-
       const pRes = await axiosInstance.get(
-        `/${roleForRefresh}/competitions/${competitionId}/participants`
+        `/competitions/${competitionId}/participants`
       );
 
       setParticipants(pRes.data || []);
@@ -137,7 +130,7 @@ export default function CompetitionDetailsPage() {
       formData.append("file", file);
 
       await axiosInstance.post(
-        `/director/competitions/${competitionId}/participants/upload`,
+        `/competitions/${competitionId}/participants/upload`,
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -149,7 +142,7 @@ export default function CompetitionDetailsPage() {
 
       // Reload participants list
       const pRes = await axiosInstance.get(
-        `/director/competitions/${competitionId}/participants`
+        `/competitions/${competitionId}/participants`
       );
       setParticipants(pRes.data || []);
     } catch (err) {
@@ -180,21 +173,14 @@ export default function CompetitionDetailsPage() {
   useEffect(() => {
     const loadDetails = async () => {
       try {
-        let role;
-        if (user.role === "producer" || user.role === "director") {
-          role = "director";
-        } else {
-          role = user.role;
-        }
-        const res = await axiosInstance.get(
-          `/${user.role}/competitions/${competitionId}`
-        );
+        const res = await axiosInstance.get(`/competitions/${competitionId}`);
 
         const pRes = await axiosInstance.get(
-          `/${role}/competitions/${competitionId}/participants`
+          `/competitions/${competitionId}/participants`
         );
+
         setParticipants(pRes.data || []);
-        setCompetition(res.data);
+        setCompetition(res.data?.competition || res.data?.data);
         await loadLeaderboard();
       } catch (err) {
         console.error("Failed to load competition:", err);
@@ -218,7 +204,7 @@ export default function CompetitionDetailsPage() {
     setDeleteLoading(true);
 
     try {
-      await axiosInstance.delete(`/producer/competitions/${competitionId}`);
+      await axiosInstance.delete(`/competitions/${competitionId}`);
       router.push("/dashboard");
     } catch (err) {
       console.error(err);
@@ -284,7 +270,7 @@ export default function CompetitionDetailsPage() {
         </button>
 
         <div className="flex gap-3">
-          {user.role === "producer" && (
+          {(user.role === "PRODUCER" || user.role === "ADMIN") && (
             <div className="flex items-center gap-3">
               <button
                 onClick={() =>
@@ -311,7 +297,7 @@ export default function CompetitionDetailsPage() {
 
       {/* Main Card */}
       <div className="bg-[#1a1b1e] border border-[#2a2b2f] rounded-xl p-8 shadow-lg">
-        <h1 className="text-3xl font-semibold">{competition.name}</h1>
+        <h1 className="text-3xl font-semibold">{competition.title}</h1>
         <p className="text-gray-400 mt-2">{competition.description}</p>
 
         {/* Type */}
@@ -335,9 +321,9 @@ export default function CompetitionDetailsPage() {
         <div className="mt-8">
           <h2 className="text-2xl font-semibold mb-3">Scoring Criteria</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {competition.criteria.map((c, idx) => (
+            {competition.criteria?.map((c, idx) => (
               <div
-                key={idx}
+                key={c.id || c.name || idx}
                 className="p-4 bg-[#111113] border border-[#2a2a2d] rounded-lg"
               >
                 <p className="text-lg">{c.name}</p>
@@ -350,13 +336,13 @@ export default function CompetitionDetailsPage() {
         {/* Judges */}
         <div className="mt-10">
           <h2 className="text-2xl font-semibold mb-3">Judges</h2>
-          {competition.judges.length === 0 ? (
+          {!competition.Judges || competition.Judges.length === 0 ? (
             <p className="text-gray-500">No judges assigned yet.</p>
           ) : (
             <div className="space-y-3">
-              {competition.judges.map((j) => (
+              {competition.Judges.map((j) => (
                 <div
-                  key={j._id}
+                  key={j.id || j.email}
                   className="p-4 bg-[#111113] border border-[#2a2a2d] rounded-lg"
                 >
                   <p>{j.name}</p>
@@ -658,7 +644,9 @@ export default function CompetitionDetailsPage() {
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {item.allJudgeScores.map((judge, jIdx) => (
                                   <div
-                                    key={jIdx}
+                                    key={
+                                      judge.judgeId || judge.judgeName || jIdx
+                                    }
                                     className="bg-[#0a0a0c]/50 border border-[#2a2a2d] p-4 rounded-lg"
                                   >
                                     <div className="flex justify-between items-center mb-3">
@@ -674,7 +662,7 @@ export default function CompetitionDetailsPage() {
                                       {judge.criteriaScores?.map(
                                         (crit, cIdx) => (
                                           <div
-                                            key={cIdx}
+                                            key={crit.criterionName || cIdx}
                                             className="flex justify-between items-center"
                                           >
                                             <span className="text-gray-300 text-sm">
@@ -768,7 +756,9 @@ export default function CompetitionDetailsPage() {
         <div className="mt-10">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-semibold">Participants & Scoring</h2>
-            {(user.role === "producer" || user.role === "director") && (
+            {(user.role === "PRODUCER" ||
+              user.role === "DIRECTOR" ||
+              user.role === "ADMIN") && (
               <button
                 onClick={() => setShowUpload(true)}
                 className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg"
@@ -780,7 +770,6 @@ export default function CompetitionDetailsPage() {
 
           {participants.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-4xl mb-4">👥</div>
               <p className="text-gray-500 text-lg">No participants yet</p>
               <p className="text-gray-600 text-sm mt-2">
                 Upload a CSV file to add participants
@@ -789,14 +778,14 @@ export default function CompetitionDetailsPage() {
           ) : (
             <div className="space-y-4">
               {participants.map((participant) => {
-                const isScoring = scoringMode[participant._id];
-                const participantScores = scoreInputs[participant._id] || {};
-                const isSubmitting = submitScoreLoading[participant._id];
-                const hasError = scoreErrors[participant._id];
+                const isScoring = scoringMode[participant.id];
+                const participantScores = scoreInputs[participant.id] || {};
+                const isSubmitting = submitScoreLoading[participant.id];
+                const hasError = scoreErrors[participant.id];
 
                 return (
                   <div
-                    key={participant._id}
+                    key={participant.id || participant.email}
                     className="bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden"
                   >
                     {/* Participant Header */}
@@ -807,15 +796,18 @@ export default function CompetitionDetailsPage() {
                             {participant.teamName ? (
                               <div>
                                 <h3 className="text-xl font-semibold text-white">
-                                  🏆 {participant.teamName}
+                                  {participant.teamName}
                                 </h3>
                                 <p className="text-gray-400 text-sm mt-1">
-                                  Team Members: {participant.members.join(", ")}
+                                  Team Members:{" "}
+                                  {Array.isArray(participant.members)
+                                    ? participant.members.join(", ")
+                                    : "No members"}
                                 </p>
                               </div>
                             ) : (
                               <h3 className="text-xl font-semibold text-white">
-                                {participant.members[0]}
+                                {participant.members?.[0] || "Participant"}
                               </h3>
                             )}
                           </div>
@@ -826,7 +818,7 @@ export default function CompetitionDetailsPage() {
                           )}
                         </div>
 
-                        {user.role === "judge" && (
+                        {user.role === "JUDGE" && (
                           <div className="flex gap-2">
                             {!isScoring ? (
                               <button
@@ -838,7 +830,7 @@ export default function CompetitionDetailsPage() {
                             ) : (
                               <div className="flex gap-2">
                                 <button
-                                  onClick={() => submitScore(participant._id)}
+                                  onClick={() => submitScore(participant.id)}
                                   disabled={isSubmitting}
                                   className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
                                 >
@@ -852,7 +844,7 @@ export default function CompetitionDetailsPage() {
                                   )}
                                 </button>
                                 <button
-                                  onClick={() => cancelScoring(participant._id)}
+                                  onClick={() => cancelScoring(participant.id)}
                                   disabled={isSubmitting}
                                   className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-sm transition-colors"
                                 >
@@ -891,9 +883,9 @@ export default function CompetitionDetailsPage() {
                               <div className="font-medium text-gray-300 text-sm">
                                 Criterion
                               </div>
-                              {competition.criteria.map((criterion) => (
+                              {competition.criteria?.map((criterion) => (
                                 <div
-                                  key={criterion.name}
+                                  key={criterion.id || criterion.name}
                                   className="text-center font-medium text-gray-300 text-sm"
                                 >
                                   {criterion.name}
@@ -917,8 +909,11 @@ export default function CompetitionDetailsPage() {
                               <div className="text-white font-medium">
                                 Enter Scores
                               </div>
-                              {competition.criteria.map((criterion) => (
-                                <div key={criterion.name} className="relative">
+                              {competition.criteria?.map((criterion) => (
+                                <div
+                                  key={criterion.id || criterion.name}
+                                  className="relative"
+                                >
                                   <input
                                     type="number"
                                     min="0"
@@ -928,7 +923,7 @@ export default function CompetitionDetailsPage() {
                                     }
                                     onChange={(e) =>
                                       updateScoreInput(
-                                        participant._id,
+                                        participant.id,
                                         criterion.name,
                                         e.target.value
                                       )

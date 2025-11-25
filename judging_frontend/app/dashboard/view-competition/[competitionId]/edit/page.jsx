@@ -20,16 +20,14 @@ export default function EditCompetitionPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const res = await axiosInstance.get(
-          `/producer/competitions/${competitionId}`
-        );
-        const comp = res.data;
+        const res = await axiosInstance.get(`/competitions/${competitionId}`);
+        const comp = res.data?.competition || res.data?.data;
 
         setCompetition(comp);
 
         // Existing criteria are read-only
         setExistingCriteria(
-          comp.criteria.map((c) => ({
+          (comp.criteria || []).map((c) => ({
             name: c.name,
             maxScore: c.maxScore,
           }))
@@ -72,9 +70,9 @@ export default function EditCompetitionPage() {
         })),
       };
 
-      // PUT request to add all criteria in one go
-      await axiosInstance.put(
-        `/producer/competitions/${competitionId}/criteria`,
+      // POST request to add all criteria in one go
+      await axiosInstance.post(
+        `/competitions/${competitionId}/criteria`,
         payload
       );
 
@@ -115,7 +113,7 @@ export default function EditCompetitionPage() {
         <div className="mb-6 space-y-3">
           <div>
             <p className="text-gray-500 text-sm">Competition Name</p>
-            <p className="text-lg">{competition.name}</p>
+            <p className="text-lg">{competition.title}</p>
           </div>
 
           <div>
