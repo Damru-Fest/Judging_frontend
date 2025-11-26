@@ -28,6 +28,7 @@ export default function CompetitionDetailsPage() {
   const [leaderboardView, setLeaderboardView] = useState("podium"); // 'podium' or 'table'
   const [sortBy, setSortBy] = useState("avgTotal");
   const [expandedParticipant, setExpandedParticipant] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const initializeScoring = async (participant) => {
     const participantId = participant.id;
@@ -213,6 +214,24 @@ export default function CompetitionDetailsPage() {
 
     setDeleteLoading(false);
   };
+
+  // Filter participants based on search query
+  const filteredParticipants = participants.filter((participant) => {
+    if (!searchQuery.trim()) return true;
+
+    const query = searchQuery.toLowerCase();
+    const teamName = participant.teamName?.toLowerCase() || "";
+    const email = participant.email?.toLowerCase() || "";
+    const members = Array.isArray(participant.members)
+      ? participant.members.join(" ").toLowerCase()
+      : "";
+
+    return (
+      teamName.includes(query) ||
+      email.includes(query) ||
+      members.includes(query)
+    );
+  });
 
   if (loading) {
     return (
@@ -768,6 +787,59 @@ export default function CompetitionDetailsPage() {
             )}
           </div>
 
+          {/* Search Bar */}
+          <div className="mb-6">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search participants by name, team, or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-3 pl-10 bg-[#111113] border border-[#2a2a2d] rounded-lg text-white placeholder-gray-500 focus:border-[#4f46e5] focus:ring-1 focus:ring-[#4f46e5] transition-colors"
+              />
+              <svg
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <p className="text-gray-400 text-sm mt-2">
+                Found {filteredParticipants.length} of {participants.length}{" "}
+                participants
+              </p>
+            )}
+          </div>
+
           {participants.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500 text-lg">No participants yet</p>
@@ -775,9 +847,16 @@ export default function CompetitionDetailsPage() {
                 Upload a CSV file to add participants
               </p>
             </div>
+          ) : filteredParticipants.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">No participants found</p>
+              <p className="text-gray-600 text-sm mt-2">
+                Try adjusting your search criteria
+              </p>
+            </div>
           ) : (
             <div className="space-y-4">
-              {participants.map((participant) => {
+              {filteredParticipants.map((participant) => {
                 const isScoring = scoringMode[participant.id];
                 const participantScores = scoreInputs[participant.id] || {};
                 const isSubmitting = submitScoreLoading[participant.id];
