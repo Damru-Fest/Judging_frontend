@@ -29,6 +29,9 @@ export default function CompetitionDetailsPage() {
   const [sortBy, setSortBy] = useState("avgTotal");
   const [expandedParticipant, setExpandedParticipant] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteParticipantLoading, setDeleteParticipantLoading] = useState({});
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverItem, setDragOverItem] = useState(null);
 
   const initializeScoring = async (participant) => {
     const participantId = participant.id;
@@ -152,6 +155,90 @@ export default function CompetitionDetailsPage() {
     }
 
     setUploading(false);
+  };
+
+  const deleteParticipant = async (participantId) => {
+    if (!confirm("Are you sure you want to delete this participant?")) return;
+
+    setDeleteParticipantLoading((prev) => ({ ...prev, [participantId]: true }));
+
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/participants/${participantId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete participant");
+      }
+
+      // Remove participant from local state
+      setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+
+      // Reload leaderboard
+      loadLeaderboard();
+    } catch (err) {
+      console.error("Delete participant error:", err);
+      alert(`Error deleting participant: ${err.message}`);
+    }
+
+    setDeleteParticipantLoading((prev) => ({
+      ...prev,
+      [participantId]: false,
+    }));
+  };
+
+  const handleDragStart = (e, index) => {
+    setDraggedItem(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverItem(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e, dropIndex) => {
+    e.preventDefault();
+
+    if (draggedItem === null || draggedItem === dropIndex) return;
+
+    const newParticipants = [...filteredParticipants];
+    const draggedParticipant = newParticipants[draggedItem];
+
+    // Remove dragged item
+    newParticipants.splice(draggedItem, 1);
+
+    // Insert at new position
+    newParticipants.splice(dropIndex, 0, draggedParticipant);
+
+    // Update the main participants array with new order
+    const reorderedParticipants = [...participants];
+    filteredParticipants.forEach((participant, index) => {
+      const mainIndex = reorderedParticipants.findIndex(
+        (p) => p.id === participant.id
+      );
+      if (mainIndex !== -1) {
+        reorderedParticipants[mainIndex] = newParticipants[index];
+      }
+    });
+
+    setParticipants(reorderedParticipants);
+    setDraggedItem(null);
+    setDragOverItem(null);
   };
 
   const loadLeaderboard = async () => {
@@ -778,12 +865,32 @@ export default function CompetitionDetailsPage() {
             {(user.role === "PRODUCER" ||
               user.role === "DIRECTOR" ||
               user.role === "ADMIN") && (
-              <button
-                onClick={() => setShowUpload(true)}
-                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg"
-              >
-                Upload CSV
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg"
+                >
+                  Upload CSV
+                </button>
+                {participants.length > 0 && (
+                  <div className="text-sm text-gray-400 flex items-center">
+                    <svg
+                      className="w-4 h-4 mr-1"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                      />
+                    </svg>
+                    Drag to reorder
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -856,88 +963,158 @@ export default function CompetitionDetailsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredParticipants.map((participant) => {
+              {filteredParticipants.map((participant, index) => {
                 const isScoring = scoringMode[participant.id];
                 const participantScores = scoreInputs[participant.id] || {};
                 const isSubmitting = submitScoreLoading[participant.id];
                 const hasError = scoreErrors[participant.id];
+                const isDeleting = deleteParticipantLoading[participant.id];
+                const canManageParticipants =
+                  user.role === "PRODUCER" ||
+                  user.role === "DIRECTOR" ||
+                  user.role === "ADMIN";
 
                 return (
                   <div
                     key={participant.id || participant.email}
-                    className="bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden"
+                    className={`bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden transition-all duration-200 ${
+                      dragOverItem === index
+                        ? "border-[#4f46e5] shadow-lg shadow-[#4f46e5]/20"
+                        : ""
+                    } ${draggedItem === index ? "opacity-50" : ""}`}
+                    draggable={canManageParticipants}
+                    onDragStart={(e) =>
+                      canManageParticipants && handleDragStart(e, index)
+                    }
+                    onDragOver={(e) =>
+                      canManageParticipants && handleDragOver(e, index)
+                    }
+                    onDragEnd={handleDragEnd}
+                    onDrop={(e) =>
+                      canManageParticipants && handleDrop(e, index)
+                    }
                   >
                     {/* Participant Header */}
                     <div className="p-5 border-b border-[#2a2a2d]">
                       <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            {participant.teamName ? (
-                              <div>
+                        <div className="flex items-center gap-3 flex-1">
+                          {canManageParticipants && (
+                            <div className="cursor-move text-gray-500 hover:text-gray-300">
+                              <svg
+                                className="w-5 h-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                                />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              {participant.teamName ? (
+                                <div>
+                                  <h3 className="text-xl font-semibold text-white">
+                                    {participant.teamName}
+                                  </h3>
+                                  <p className="text-gray-400 text-sm mt-1">
+                                    Team Members:{" "}
+                                    {Array.isArray(participant.members)
+                                      ? participant.members.join(", ")
+                                      : "No members"}
+                                  </p>
+                                </div>
+                              ) : (
                                 <h3 className="text-xl font-semibold text-white">
-                                  {participant.teamName}
+                                  {participant.members?.[0] || "Participant"}
                                 </h3>
-                                <p className="text-gray-400 text-sm mt-1">
-                                  Team Members:{" "}
-                                  {Array.isArray(participant.members)
-                                    ? participant.members.join(", ")
-                                    : "No members"}
-                                </p>
-                              </div>
-                            ) : (
-                              <h3 className="text-xl font-semibold text-white">
-                                {participant.members?.[0] || "Participant"}
-                              </h3>
+                              )}
+                            </div>
+                            {participant.email && (
+                              <p className="text-gray-500 text-sm">
+                                📧 {participant.email}
+                              </p>
                             )}
                           </div>
-                          {participant.email && (
-                            <p className="text-gray-500 text-sm">
-                              📧 {participant.email}
-                            </p>
-                          )}
                         </div>
 
-                        {user.role === "JUDGE" && (
-                          <div className="flex gap-2">
-                            {!isScoring ? (
-                              <button
-                                onClick={() => initializeScoring(participant)}
-                                className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-sm transition-colors"
-                              >
-                                Score Participant
-                              </button>
-                            ) : (
-                              <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                          {user.role === "JUDGE" && (
+                            <>
+                              {!isScoring ? (
                                 <button
-                                  onClick={() => submitScore(participant.id)}
-                                  disabled={isSubmitting}
-                                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
+                                  onClick={() => initializeScoring(participant)}
+                                  className="px-4 py-2 bg-[#4f46e5] hover:bg-[#4338ca] rounded-lg text-sm transition-colors"
                                 >
-                                  {isSubmitting ? (
-                                    <>
-                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                      Saving...
-                                    </>
-                                  ) : (
-                                    <>Save Score</>
-                                  )}
+                                  Score Participant
                                 </button>
-                                <button
-                                  onClick={() => cancelScoring(participant.id)}
-                                  disabled={isSubmitting}
-                                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-sm transition-colors"
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => submitScore(participant.id)}
+                                    disabled={isSubmitting}
+                                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
+                                  >
+                                    {isSubmitting ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        Saving...
+                                      </>
+                                    ) : (
+                                      <>Save Score</>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      cancelScoring(participant.id)
+                                    }
+                                    disabled={isSubmitting}
+                                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-sm transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          )}
+
+                          {canManageParticipants && (
+                            <button
+                              onClick={() => deleteParticipant(participant.id)}
+                              disabled={isDeleting}
+                              className="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
+                              title="Delete participant"
+                            >
+                              {isDeleting ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              ) : (
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
                                 >
-                                  Cancel
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {hasError && (
                         <div className="mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
-                          <p className="text-red-400 text-sm"> {hasError}</p>
+                          <p className="text-red-400 text-sm">{hasError}</p>
                         </div>
                       )}
                     </div>
