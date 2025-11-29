@@ -12,7 +12,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await axiosInstance.get("/auth/me");
+        const res = await axiosInstance.get("/api/auth/me");
         setUser(res.data.user);
       } catch {
         setUser(null);
@@ -26,7 +26,10 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const res = await axiosInstance.post("/auth/login", { email, password });
+      const res = await axiosInstance.post("/api/auth/login", {
+        email,
+        password,
+      });
 
       setUser(res.data.user);
 
@@ -44,7 +47,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await axiosInstance.post("/auth/logout");
+      await axiosInstance.post("/api/auth/logout");
     } catch {}
     setUser(null);
   };

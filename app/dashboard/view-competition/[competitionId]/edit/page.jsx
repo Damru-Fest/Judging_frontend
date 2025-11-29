@@ -20,8 +20,10 @@ export default function EditCompetitionPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const res = await axiosInstance.get(`/competitions/${competitionId}`);
-        const comp = res.data?.competition || res.data?.data;
+        const res = await axiosInstance.get(
+          `/api/producer/competitions/${competitionId}`
+        );
+        const comp = res.data?.competition || res.data?.data || res.data;
 
         setCompetition(comp);
 
@@ -34,7 +36,7 @@ export default function EditCompetitionPage() {
         );
       } catch (err) {
         console.error(err);
-        setError("Failed to load competition.");
+        setError("Unable to load competition details. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -72,7 +74,7 @@ export default function EditCompetitionPage() {
 
       // POST request to add all criteria in one go
       await axiosInstance.post(
-        `/competitions/${competitionId}/criteria`,
+        `/api/producer/competitions/${competitionId}/criteria`,
         payload
       );
 
@@ -80,7 +82,9 @@ export default function EditCompetitionPage() {
       router.push(`/dashboard/view-competition/${competitionId}`);
     } catch (err) {
       console.error(err);
-      setError("Failed to add criteria.");
+      setError(
+        "Unable to save criteria. Please check your inputs and try again."
+      );
     }
 
     setSaving(false);
@@ -89,7 +93,7 @@ export default function EditCompetitionPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-400">
-        Loading...
+        Loading competition details...
       </div>
     );
   }
@@ -97,7 +101,7 @@ export default function EditCompetitionPage() {
   if (!competition) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-400">
-        Competition not found.
+        Competition not found. Please check the URL or try again.
       </div>
     );
   }
@@ -105,7 +109,9 @@ export default function EditCompetitionPage() {
   return (
     <div className="min-h-screen bg-[#0e0f12] text-white p-6 flex justify-center">
       <div className="max-w-2xl w-full bg-[#1a1b1e] border border-[#2d2e32] p-8 rounded-xl shadow-lg">
-        <h1 className="text-3xl font-semibold mb-6">Add Criteria</h1>
+        <h1 className="text-3xl font-semibold mb-6">
+          Edit Competition Criteria
+        </h1>
 
         {error && <p className="text-red-400 mb-4">{error}</p>}
 
@@ -129,7 +135,7 @@ export default function EditCompetitionPage() {
 
         {/* EXISTING CRITERIA (READ-ONLY) */}
         <div>
-          <h2 className="text-xl mb-3">Existing Criteria</h2>
+          <h2 className="text-xl mb-3">Current Judging Criteria</h2>
           <div className="space-y-4">
             {existingCriteria.map((crit, index) => (
               <div
@@ -138,7 +144,7 @@ export default function EditCompetitionPage() {
               >
                 <p className="text-lg">{crit.name}</p>
                 <p className="text-gray-400 text-sm">
-                  Max Score: {crit.maxScore}
+                  Maximum Points: {crit.maxScore}
                 </p>
               </div>
             ))}
@@ -147,7 +153,7 @@ export default function EditCompetitionPage() {
 
         {/* NEW CRITERIA */}
         <form onSubmit={handleSave} className="space-y-6 mt-8">
-          <h2 className="text-xl mb-3">Add New Criteria</h2>
+          <h2 className="text-xl mb-3">Add Additional Criteria</h2>
 
           <div className="space-y-4">
             {newCriteria.map((crit, index) => (
@@ -157,7 +163,7 @@ export default function EditCompetitionPage() {
               >
                 <input
                   type="text"
-                  placeholder="Criteria Name"
+                  placeholder="Enter criteria name (e.g., Innovation, Presentation)"
                   className="w-full p-3 bg-[#1b1c1f] border border-[#2b2b2f] rounded-lg text-white mb-3 focus:border-[#4f46e5]"
                   value={crit.name}
                   onChange={(e) =>
@@ -170,7 +176,7 @@ export default function EditCompetitionPage() {
 
                 <input
                   type="number"
-                  placeholder="Max Score"
+                  placeholder="Maximum points"
                   className="w-32 p-3 bg-[#1b1c1f] border border-[#2b2b2f] rounded-lg text-white focus:border-[#4f46e5]"
                   value={crit.maxScore}
                   onChange={(e) =>
@@ -188,7 +194,7 @@ export default function EditCompetitionPage() {
             onClick={addCriteria}
             className="px-4 py-2 bg-[#2d2e32] hover:bg-[#3a3b40] text-gray-200 rounded-lg text-sm"
           >
-            + Add Criteria
+            + Add Another Criterion
           </button>
 
           {/* SAVE */}
@@ -197,7 +203,7 @@ export default function EditCompetitionPage() {
             disabled={saving}
             className="w-full py-3 bg-[#4f46e5] hover:bg-[#4338ca] text-white rounded-lg mt-4 text-lg"
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? "Saving Criteria..." : "Save All Changes"}
           </button>
         </form>
       </div>

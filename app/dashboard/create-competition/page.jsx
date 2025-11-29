@@ -65,7 +65,7 @@ export default function CreateCompetitionPage() {
           })),
       };
 
-      await axiosInstance.post("/producer/competitions", payload);
+      await axiosInstance.post("/api/producer/competitions", payload);
 
       router.push("/dashboard");
     } catch (err) {

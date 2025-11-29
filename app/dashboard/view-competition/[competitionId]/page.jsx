@@ -30,18 +30,16 @@ export default function CompetitionDetailsPage() {
   const [expandedParticipant, setExpandedParticipant] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteParticipantLoading, setDeleteParticipantLoading] = useState({});
-  const [draggedItem, setDraggedItem] = useState(null);
-  const [dragOverItem, setDragOverItem] = useState(null);
 
   const initializeScoring = async (participant) => {
-    const participantId = participant.id;
+    const participantId = participant._id;
 
     setScoringMode((prev) => ({ ...prev, [participantId]: true }));
     setScoreErrors((prev) => ({ ...prev, [participantId]: "" }));
 
     try {
       const res = await axiosInstance.get(
-        `/competitions/${competitionId}/participant/${participantId}/matrix`
+        `/api/judge/competitions/${competitionId}/participants/${participantId}/matrix`
       );
 
       const existing = res.data.existingScores;
@@ -92,20 +90,28 @@ export default function CompetitionDetailsPage() {
 
     try {
       const payload = {
-        competitionId: competitionId,
         participantId: participantId,
         scores: competition.criteria?.map((c) => ({
-          criteriaId: c.id,
+          criterionName: c.name,
           value: scoreInputs[participantId]?.[c.name] ?? 0,
         })),
       };
-      await axiosInstance.post(`/competitions/score`, payload);
+      await axiosInstance.post(
+        `/api/judge/competitions/${competitionId}/scores`,
+        payload
+      );
 
       setScoringMode((prev) => ({ ...prev, [participantId]: false }));
 
       // refresh list
+      const baseRoute =
+        user?.role === "producer"
+          ? "/api/producer"
+          : user?.role === "director"
+          ? "/api/director"
+          : "/api/judge";
       const pRes = await axiosInstance.get(
-        `/competitions/${competitionId}/participants`
+        `${baseRoute}/competitions/${competitionId}/participants`
       );
 
       setParticipants(pRes.data || []);
@@ -133,8 +139,10 @@ export default function CompetitionDetailsPage() {
       const formData = new FormData();
       formData.append("file", file);
 
+      const uploadRoute =
+        user?.role === "producer" ? "/api/producer" : "/api/director";
       await axiosInstance.post(
-        `/competitions/${competitionId}/participants/upload`,
+        `${uploadRoute}/competitions/${competitionId}/participants/upload`,
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -145,8 +153,14 @@ export default function CompetitionDetailsPage() {
       setShowUpload(false);
 
       // Reload participants list
+      const reloadRoute =
+        user?.role === "producer"
+          ? "/api/producer"
+          : user?.role === "director"
+          ? "/api/director"
+          : "/api/judge";
       const pRes = await axiosInstance.get(
-        `/competitions/${competitionId}/participants`
+        `${reloadRoute}/competitions/${competitionId}/participants`
       );
       setParticipants(pRes.data || []);
     } catch (err) {
@@ -163,24 +177,15 @@ export default function CompetitionDetailsPage() {
     setDeleteParticipantLoading((prev) => ({ ...prev, [participantId]: true }));
 
     try {
-      const response = await fetch(
-        `/api/competitions/${competitionId}/participants/${participantId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-            "Content-Type": "application/json",
-          },
-        }
+      await axiosInstance.delete(
+        `/api/competitions/${competitionId}/participants/${participantId}`
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to delete participant");
-      }
-
       // Remove participant from local state
-      setParticipants((prev) => prev.filter((p) => p.id !== participantId));
+      setParticipants((prev) => prev.filter((p) => p._id !== participantId));
+
+      // Show success message
+      console.log("Participant deleted successfully");
 
       // Reload leaderboard
       loadLeaderboard();
@@ -195,57 +200,11 @@ export default function CompetitionDetailsPage() {
     }));
   };
 
-  const handleDragStart = (e, index) => {
-    setDraggedItem(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverItem(index);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedItem(null);
-    setDragOverItem(null);
-  };
-
-  const handleDrop = (e, dropIndex) => {
-    e.preventDefault();
-
-    if (draggedItem === null || draggedItem === dropIndex) return;
-
-    const newParticipants = [...filteredParticipants];
-    const draggedParticipant = newParticipants[draggedItem];
-
-    // Remove dragged item
-    newParticipants.splice(draggedItem, 1);
-
-    // Insert at new position
-    newParticipants.splice(dropIndex, 0, draggedParticipant);
-
-    // Update the main participants array with new order
-    const reorderedParticipants = [...participants];
-    filteredParticipants.forEach((participant, index) => {
-      const mainIndex = reorderedParticipants.findIndex(
-        (p) => p.id === participant.id
-      );
-      if (mainIndex !== -1) {
-        reorderedParticipants[mainIndex] = newParticipants[index];
-      }
-    });
-
-    setParticipants(reorderedParticipants);
-    setDraggedItem(null);
-    setDragOverItem(null);
-  };
-
   const loadLeaderboard = async () => {
     try {
       setLeaderboardLoading(true);
       const lbRes = await axiosInstance.get(
-        `/leaderboard/${competitionId}?limit=${
+        `/api/leaderboard/${competitionId}?limit=${
           showFullLeaderboard ? 50 : 10
         }&sortBy=${sortBy}`
       );
@@ -261,14 +220,24 @@ export default function CompetitionDetailsPage() {
   useEffect(() => {
     const loadDetails = async () => {
       try {
-        const res = await axiosInstance.get(`/competitions/${competitionId}`);
+        // Determine the appropriate route based on user role
+        const baseRoute =
+          user?.role === "producer"
+            ? "/api/producer"
+            : user?.role === "director"
+            ? "/api/director"
+            : "/api/judge";
+
+        const res = await axiosInstance.get(
+          `${baseRoute}/competitions/${competitionId}`
+        );
 
         const pRes = await axiosInstance.get(
-          `/competitions/${competitionId}/participants`
+          `${baseRoute}/competitions/${competitionId}/participants`
         );
 
         setParticipants(pRes.data || []);
-        setCompetition(res.data?.competition || res.data?.data);
+        setCompetition(res.data?.competition || res.data?.data || res.data);
         await loadLeaderboard();
       } catch (err) {
         console.error("Failed to load competition:", err);
@@ -278,7 +247,7 @@ export default function CompetitionDetailsPage() {
     };
 
     loadDetails();
-  }, [competitionId]);
+  }, [competitionId, user?.role]);
 
   useEffect(() => {
     if (competition) {
@@ -292,7 +261,7 @@ export default function CompetitionDetailsPage() {
     setDeleteLoading(true);
 
     try {
-      await axiosInstance.delete(`/competitions/${competitionId}`);
+      await axiosInstance.delete(`/api/producer/competitions/${competitionId}`);
       router.push("/dashboard");
     } catch (err) {
       console.error(err);
@@ -369,14 +338,14 @@ export default function CompetitionDetailsPage() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push("/dashboard")}
           className="px-4 py-2 bg-[#1f1f22] border border-[#2a2a2d] rounded-lg hover:bg-[#2b2b30]"
         >
           ← Back
         </button>
 
         <div className="flex gap-3">
-          {(user.role === "PRODUCER" || user.role === "ADMIN") && (
+          {(user.role === "producer" || user.role === "admin") && (
             <div className="flex items-center gap-3">
               <button
                 onClick={() =>
@@ -442,13 +411,13 @@ export default function CompetitionDetailsPage() {
         {/* Judges */}
         <div className="mt-10">
           <h2 className="text-2xl font-semibold mb-3">Judges</h2>
-          {!competition.Judges || competition.Judges.length === 0 ? (
+          {!competition.judges || competition.judges.length === 0 ? (
             <p className="text-gray-500">No judges assigned yet.</p>
           ) : (
             <div className="space-y-3">
-              {competition.Judges.map((j) => (
+              {competition.judges.map((j) => (
                 <div
-                  key={j.id || j.email}
+                  key={j._id || j.id || j.email}
                   className="p-4 bg-[#111113] border border-[#2a2a2d] rounded-lg"
                 >
                   <p>{j.name}</p>
@@ -862,9 +831,9 @@ export default function CompetitionDetailsPage() {
         <div className="mt-10">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-semibold">Participants & Scoring</h2>
-            {(user.role === "PRODUCER" ||
-              user.role === "DIRECTOR" ||
-              user.role === "ADMIN") && (
+            {(user.role === "producer" ||
+              user.role === "director" ||
+              user.role === "admin") && (
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowUpload(true)}
@@ -872,24 +841,6 @@ export default function CompetitionDetailsPage() {
                 >
                   Upload CSV
                 </button>
-                {participants.length > 0 && (
-                  <div className="text-sm text-gray-400 flex items-center">
-                    <svg
-                      className="w-4 h-4 mr-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
-                      />
-                    </svg>
-                    Drag to reorder
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -964,57 +915,25 @@ export default function CompetitionDetailsPage() {
           ) : (
             <div className="space-y-4">
               {filteredParticipants.map((participant, index) => {
-                const isScoring = scoringMode[participant.id];
-                const participantScores = scoreInputs[participant.id] || {};
-                const isSubmitting = submitScoreLoading[participant.id];
-                const hasError = scoreErrors[participant.id];
-                const isDeleting = deleteParticipantLoading[participant.id];
+                const isScoring = scoringMode[participant._id];
+                const participantScores = scoreInputs[participant._id] || {};
+                const isSubmitting = submitScoreLoading[participant._id];
+                const hasError = scoreErrors[participant._id];
+                const isDeleting = deleteParticipantLoading[participant._id];
                 const canManageParticipants =
-                  user.role === "PRODUCER" ||
-                  user.role === "DIRECTOR" ||
-                  user.role === "ADMIN";
+                  user.role === "producer" ||
+                  user.role === "director" ||
+                  user.role === "admin";
 
                 return (
                   <div
-                    key={participant.id || participant.email}
-                    className={`bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden transition-all duration-200 ${
-                      dragOverItem === index
-                        ? "border-[#4f46e5] shadow-lg shadow-[#4f46e5]/20"
-                        : ""
-                    } ${draggedItem === index ? "opacity-50" : ""}`}
-                    draggable={canManageParticipants}
-                    onDragStart={(e) =>
-                      canManageParticipants && handleDragStart(e, index)
-                    }
-                    onDragOver={(e) =>
-                      canManageParticipants && handleDragOver(e, index)
-                    }
-                    onDragEnd={handleDragEnd}
-                    onDrop={(e) =>
-                      canManageParticipants && handleDrop(e, index)
-                    }
+                    key={participant._id || participant.email}
+                    className={`bg-[#111113] border border-[#2a2a2d] rounded-lg overflow-hidden transition-all duration-200`}
                   >
                     {/* Participant Header */}
                     <div className="p-5 border-b border-[#2a2a2d]">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 flex-1">
-                          {canManageParticipants && (
-                            <div className="cursor-move text-gray-500 hover:text-gray-300">
-                              <svg
-                                className="w-5 h-5"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M4 6h16M4 10h16M4 14h16M4 18h16"
-                                />
-                              </svg>
-                            </div>
-                          )}
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               {participant.teamName ? (
@@ -1026,12 +945,23 @@ export default function CompetitionDetailsPage() {
                                     Team Members:{" "}
                                     {Array.isArray(participant.members)
                                       ? participant.members.join(", ")
+                                      : participant.memberNames
+                                      ? participant.memberNames
+                                          .split(",")
+                                          .map((name) => name.trim())
+                                          .join(", ")
                                       : "No members"}
                                   </p>
                                 </div>
                               ) : (
                                 <h3 className="text-xl font-semibold text-white">
-                                  {participant.members?.[0] || "Participant"}
+                                  {participant.members?.[0] ||
+                                    (participant.memberNames
+                                      ? participant.memberNames
+                                          .split(",")[0]
+                                          ?.trim()
+                                      : null) ||
+                                    "Participant"}
                                 </h3>
                               )}
                             </div>
@@ -1044,7 +974,7 @@ export default function CompetitionDetailsPage() {
                         </div>
 
                         <div className="flex gap-2 items-center">
-                          {user.role === "JUDGE" && (
+                          {user.role === "judge" && (
                             <>
                               {!isScoring ? (
                                 <button
@@ -1056,7 +986,7 @@ export default function CompetitionDetailsPage() {
                               ) : (
                                 <>
                                   <button
-                                    onClick={() => submitScore(participant.id)}
+                                    onClick={() => submitScore(participant._id)}
                                     disabled={isSubmitting}
                                     className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
                                   >
@@ -1071,7 +1001,7 @@ export default function CompetitionDetailsPage() {
                                   </button>
                                   <button
                                     onClick={() =>
-                                      cancelScoring(participant.id)
+                                      cancelScoring(participant._id)
                                     }
                                     disabled={isSubmitting}
                                     className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-sm transition-colors"
@@ -1085,7 +1015,7 @@ export default function CompetitionDetailsPage() {
 
                           {canManageParticipants && (
                             <button
-                              onClick={() => deleteParticipant(participant.id)}
+                              onClick={() => deleteParticipant(participant._id)}
                               disabled={isDeleting}
                               className="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg text-sm transition-colors flex items-center gap-2"
                               title="Delete participant"
@@ -1179,7 +1109,7 @@ export default function CompetitionDetailsPage() {
                                     }
                                     onChange={(e) =>
                                       updateScoreInput(
-                                        participant.id,
+                                        participant._id,
                                         criterion.name,
                                         e.target.value
                                       )

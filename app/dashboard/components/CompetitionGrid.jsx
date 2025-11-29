@@ -11,11 +11,12 @@ export default function CompetitionGrid({ role }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const { user } = useAuth();
-
+  console.log(role);
   const loadCompetitions = async () => {
     try {
-      const res = await axiosInstance.get("/competitions");
-      setCompetitions(res.data?.data || []);
+      const res = await axiosInstance.get(`/api/${role}/competitions`);
+
+      setCompetitions(res.data || []);
     } catch (err) {
       console.log("Error loading competitions:", err);
     } finally {
@@ -33,9 +34,10 @@ export default function CompetitionGrid({ role }) {
 
   const selectCompe = async (id) => {
     try {
-      const res = await axiosInstance.post("/competitions/judge/select", {
-        competitionId: id,
-      });
+      const res = await axiosInstance.post(
+        `/api/judge/competitions/${id}/select`,
+        {}
+      );
       // Reload competitions to update the button state
       await loadCompetitions();
       router.push(`/dashboard/view-competition/${id}`);
@@ -46,7 +48,19 @@ export default function CompetitionGrid({ role }) {
 
   // Check if current user is already a judge for this competition
   const isAlreadyJudge = (competition) => {
-    return competition.Judges?.some((judge) => judge.id === user?.id) || false;
+    if (!competition.judges || !Array.isArray(competition.judges)) {
+      return false;
+    }
+    return competition.judges.some((judge) => {
+      // Handle both ObjectId and populated judge object cases
+      if (typeof judge === "object" && judge !== null) {
+        return (
+          judge._id?.toString() === user?.id?.toString() ||
+          judge.id?.toString() === user?.id?.toString()
+        );
+      }
+      return judge?.toString() === user?.id?.toString();
+    });
   };
 
   if (loading) {
@@ -61,7 +75,7 @@ export default function CompetitionGrid({ role }) {
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 p-6">
       {competitions?.map((comp) => (
         <div
-          key={comp.id}
+          key={comp._id}
           className="bg-[#1a1b1e] p-5 rounded-xl border border-[#2a2b2f] hover:border-[#4f46e5] transition-colors"
         >
           <h3 className="text-white text-xl font-semibold">{comp.title}</h3>
@@ -73,29 +87,29 @@ export default function CompetitionGrid({ role }) {
             <span>Type: {comp.type}</span>
             <span>{comp.Participants?.length || 0} participants</span>
           </div>
-          {(role === "PRODUCER" || role === "DIRECTOR" || role === "ADMIN") && (
+          {(role === "producer" || role === "director" || role === "admin") && (
             <button
               className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white"
-              onClick={() => pushToCompe(comp.id)}
+              onClick={() => pushToCompe(comp._id)}
             >
               View Details
             </button>
           )}
-          {role === "JUDGE" && (
+          {role === "judge" && (
             <>
               {isAlreadyJudge(comp) ? (
                 <button
-                  className="mt-4 w-full bg-green-600 px-4 py-2 rounded-lg hover:bg-green-700 text-white"
-                  onClick={() => pushToCompe(comp.id)}
+                  className="mt-4 w-full bg-green-600 px-4 py-2 rounded-lg hover:bg-green-700 text-white transition-colors"
+                  onClick={() => pushToCompe(comp._id)}
                 >
-                  View Details
+                  ✓ View Details
                 </button>
               ) : (
                 <button
-                  className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white"
-                  onClick={() => selectCompe(comp.id)}
+                  className="mt-4 w-full bg-[#4f46e5] px-4 py-2 rounded-lg hover:bg-[#4338ca] text-white transition-colors"
+                  onClick={() => selectCompe(comp._id)}
                 >
-                  Select
+                  Select Competition
                 </button>
               )}
             </>
